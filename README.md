@@ -1,5 +1,5 @@
 # GuildRecipes
-**Version:** 0.7
+**Version:** 0.1
 **Game Version:** Turtle WoW (Interface 11200)
 
 GuilRecipes lets you view the recipes of other guild members using the addon.
@@ -28,6 +28,8 @@ Type `/gr` or `/guildrecipes` in chat to see all options.
 - `/gr show` - Open tradeskills.
 - `/gr close` - Close tradeskills.
 - `/gr toggle` - Toggle tradeskills.
+- `/gr refresh` - Request updates tradeskills from guild members.
+- `/gr remove_player <Player>` - Remove player from all recipes
 
 ---
 
