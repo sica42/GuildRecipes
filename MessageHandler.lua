@@ -7,7 +7,7 @@ if m.MessageHandler then return end
 
 ---@type MessageCommand
 local MessageCommand = {
-	RequestTradeskills = "RTS",
+	RequestTradeskill = "RTS",
 	Tradeskill = "TS",
 	Ping = "PING",
 	Pong = "PONG",
@@ -25,6 +25,7 @@ local MessageCommand = {
 
 ---@class MessageHandler
 ---@field send_tradeskill fun( tradeskill: string )
+---@field request_tradeskill fun( tradeskill: string )
 ---@field request_tradeskills fun()
 ---@field version_check fun()
 
@@ -35,23 +36,26 @@ local M = {}
 ---@param ace_comm AceComm
 function M.new( ace_timer, ace_serializer, ace_comm )
 	local pinging = false
-	local best_ping = nil
+	local best_ping = {}
 	local var_names = {
 		n = "name",
 		q = "quality",
-		t = "icon",
 		c = "count",
-		p = "price",
-		pl = "players",
+		p = "players",
 		d = "data",
-		x = "deleted",
-		f = "from",
 		i = "items",
-		m = "message",
-		ts = "timestamp",
+		ts = "tradeskill",
+		h = "hashes",
 		lu = "last_update",
-		ilu = "inventory_last_update",
-		tlu = "tradeskills_last_update",
+		--tlu = "tradeskills_last_update",
+		Alc = "Alchemy",
+		Bla = "Blacksmithing",
+		Eng = "Engineering",
+		Enc = "Enchanting",
+		Lea = "Leatherworking",
+		Tai = "Tailoring",
+		Jew = "Jewelcrafting",
+
 	}
 	setmetatable( var_names, { __index = function( _, key ) return key end } );
 
@@ -62,9 +66,7 @@ function M.new( ace_timer, ace_serializer, ace_comm )
 			if type( value ) == "table" then
 				value = decode( value )
 			end
-			if key == "t" then
-				value = "Interface\\Icons\\" .. value
-			end
+
 			l[ var_names[ key ] ] = value
 		end
 		return l
@@ -79,15 +81,21 @@ function M.new( ace_timer, ace_serializer, ace_comm )
 	end
 
 	local function send_tradeskill( tradeskill )
+		m.debug( string.format( "Sending %s", tradeskill ) )
 		local data = {
 			tradeskill = tradeskill,
 			recipes = {}
 		}
 
-		for _, skill in m.db.tradeskills[ tradeskill ] do
+		for id, item in m.db.tradeskills[ tradeskill ] do
+			local players = {}
+			for _, p in pairs( m.comma_separated_to_table( item.p ) ) do
+				table.insert( players, m.db.players[ tonumber( p ) ] )
+			end
+
 			table.insert( data.recipes, {
-				id = skill.id,
-				pl = skill.players
+				id = id,
+				p = players
 			} )
 		end
 
@@ -100,10 +108,25 @@ function M.new( ace_timer, ace_serializer, ace_comm )
 		end
 	end
 
+	local function request_tradeskill( tradeskill )
+		pinging = true
+		best_ping = {}
+
+		broadcast( MessageCommand.Ping, {
+			[string.sub( tradeskill, 1, 3 )] = m.tradeskill_hash( tradeskill )
+		} )
+	end
+
 	local function request_tradeskills()
 		pinging = true
-		best_ping = nil
-		broadcast( MessageCommand.Ping )
+		best_ping = {}
+		local hashes = {}
+
+		for tradeskill in pairs(m.TRADE_SKILL_LOCALIZATION) do
+			hashes[ string.sub( tradeskill, 1, 3 ) ] = m.tradeskill_hash( tradeskill )
+		end
+
+		broadcast( MessageCommand.Ping, hashes )
 	end
 
 	local function version_check()
@@ -124,9 +147,14 @@ function M.new( ace_timer, ace_serializer, ace_comm )
 
 			for _, v in data.recipes do
 				if v.id then
-					local item_link
-					if m.db.tradeskills[ tradeskill ][ v.id ] and m.db.tradeskills[ tradeskill ][ v.id ].link then
-						item_link = m.db.tradeskills[ tradeskill ][ v.id ].link
+					---@type Item
+					local item = nil
+					if m.db.tradeskills[ tradeskill ][ v.id ] then
+						item = {
+							id = v.id,
+							name = m.db.tradeskills[ tradeskill ][ v.id ].n,
+							quality = m.db.tradeskills[ tradeskill ][ v.id ].q
+						}
 					else
 						if tradeskill == "Enchanting" then
 							if v and v.id then
@@ -134,18 +162,25 @@ function M.new( ace_timer, ace_serializer, ace_comm )
 								if not name then
 									m.error( string.format( "Unknown enchantment received (%d)", v.id ) )
 								else
-									item_link = m.make_enchant_link( v.id, name )
+									item = {
+										id = v.id,
+										name = name,
+									}
 								end
 							else
 								m.debug( "empty enchant data??" )
 							end
 						else
+							m.debug( "Fetching item info for " .. tostring( v.id ) )
 							m.get_item_info( v.id, function( item_info, players )
 								if item_info then
-									local link = m.make_item_link( item_info.id, item_info.name, item_info.quality )
-									if link then
-										m.update_tradeskill_item( tradeskill, link, players )
-									end
+									local i = {
+										id = item_info.id,
+										name = item_info.name,
+										quality = item_info.quality
+									}
+
+									m.update_tradeskill_item( tradeskill, i, players )
 								else
 									m.debug( "No item_info for " .. tostring( v.id ) )
 								end
@@ -153,45 +188,63 @@ function M.new( ace_timer, ace_serializer, ace_comm )
 						end
 					end
 
-					if item_link then
-						m.update_tradeskill_item( tradeskill, item_link, v.players )
+					if item then
+						--m.debug( "got item" )
+						m.update_tradeskill_item( tradeskill, item, v.players )
 					end
 				end
 			end
 
-			m.db.tradeskills_last_update = m.get_server_timestamp()
-		elseif command == MessageCommand.RequestTradeskills and data.player == m.player then
+			m.db.tradeskills_last_update[ tradeskill ] = m.get_server_timestamp()
+		elseif command == MessageCommand.RequestTradeskill and data.player == m.player then
 			--
-			-- Request for tradeskills
+			-- Request for tradeskill
 			--
-			send_tradeskills()
-		elseif command == MessageCommand.Ping then
+			m.debug(m.dump(data))
+			send_tradeskill( data.tradeskill )
+		elseif command == MessageCommand.Ping and sender ~= m.player then
 			--
 			-- Recive ping
 			--
-			broadcast( MessageCommand.Pong, {
-				tlu = m.db.tradeskills_last_update,
-			} )
+			for tradeskill, hash in (data or {}) do
+				local local_hash = m.tradeskill_hash( tradeskill )
+				if local_hash == hash then
+					data[ tradeskill ] = nil
+				else
+					data[ tradeskill ] = m.db.tradeskills_last_update[ tradeskill ] or 0
+				end
+			end
+
+			m.debug( m.dump( data ) )
+			broadcast( MessageCommand.Pong, data )
 		elseif command == MessageCommand.Pong and pinging then
 			--
 			-- Receive pong
 			--
 			m.debug( m.dump( data ) )
-			if not best_ping or (data and data[ "tradeskills_last_update" ] > best_ping.last_update) then
-				best_ping = {
-					player = sender,
-					last_update = data and data[ "tradeskills_last_update" ] or m.get_server_timestamp()
-				}
-				m.debug( data.ping .. "=" .. m.dump( best_ping[ data.ping ] ) )
+			for tradeskill, last_update in pairs( data or {} ) do
+				if not best_ping[ tradeskill ] or (last_update > best_ping[ tradeskill ].last_update) then
+					best_ping[ tradeskill ] = {
+						player = sender,
+						last_update = last_update
+					}
+				end
 			end
 
 			if ace_timer:TimeLeft( M[ "ping_timer" ] ) == 0 then
 				M[ "ping_timer" ] = ace_timer.ScheduleTimer( M, function()
 					if pinging then
+						m.debug( "Ping timeout, requesting tradeskills from best pings." )
 						pinging = false
-						broadcast( MessageCommand.RequestTradeskills, { player = best_ping.player } )
+						for tradeskill, ping_info in pairs( best_ping ) do
+							m.debug( string.format( "Requesting %s from %s (last update: %d)", tradeskill, ping_info.player, ping_info.last_update ) )
+							broadcast( MessageCommand.RequestTradeskill, {
+								player = ping_info.player,
+								ts = tradeskill
+							} )
+						end
 					end
-				end, 1 )
+				end, 2 )
 			end
 		elseif command == MessageCommand.VersionCheck then
 			--
@@ -233,6 +286,7 @@ function M.new( ace_timer, ace_serializer, ace_comm )
 	---@type MessageHandler
 	return {
 		send_tradeskill = send_tradeskill,
+		request_tradeskill = request_tradeskill,
 		request_tradeskills = request_tradeskills,
 		version_check = version_check
 	}

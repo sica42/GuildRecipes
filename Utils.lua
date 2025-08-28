@@ -111,10 +111,6 @@ function M.get_item_name_colorized( item )
 	local color = ITEM_QUALITY_COLORS[ item.quality or 1 ]
 	local hex = string.format( "%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255 )
 
-	if not item.quality and item.link then
-		hex = string.match( item.link, "|c[fF][fF]([0-9a-fA-F]+)" ) or ""
-	end
-
 	return string.format( "|cFF%s%s|r", hex, item.name )
 end
 
@@ -191,13 +187,13 @@ end
 ---@param message string
 ---@param short boolean?
 function M.info( message, short )
-	local tag = string.format( "|c%s%s|r", M.tagcolor, short and "GI" or "GuildRecipes" )
+	local tag = string.format( "|c%s%s|r", M.tagcolor, short and "GR" or "GuildRecipes" )
 	DEFAULT_CHAT_FRAME:AddMessage( string.format( "%s: %s", tag, message ) )
 end
 
 ---@param message string
 function M.error( message )
-	local tag = string.format( "|c%s%s|r|cffff0000%s|r", M.tagcolor, "GI", "ERROR" )
+	local tag = string.format( "|c%s%s|r|cffff0000%s|r", M.tagcolor, "GR", "ERROR" )
 	DEFAULT_CHAT_FRAME:AddMessage( string.format( "%s: %s", tag, message ) )
 end
 
@@ -207,9 +203,33 @@ function M.debug( message )
 	end
 end
 
+---@param t string[]
+---@return string
+---@nodiscard
+function M.table_to_comma_separated( t )
+	local s = ""
+	for _, v in pairs( t ) do
+		if s ~= "" then s = s .. "," end
+		s = s .. tostring( v )
+	end
+	return s
+end
+
+---@param s string
+---@return string[]
+---@nodiscard
+function M.comma_separated_to_table( s )
+	local t = {}
+	for v in string.gmatch( s, "([^,]+)" ) do
+		table.insert( t, v )
+	end
+	return t
+end
+
 ---@param value string|number
 ---@param t table
 ---@param extract_field string?
+---@nodiscard
 function M.find( value, t, extract_field )
 	if type( t ) ~= "table" or M.count( t ) == 0 then return nil end
 
@@ -228,7 +248,6 @@ function M.count( t, field )
 	local count = 0
 	for _, e in pairs( t ) do
 		if field and e[ field ] and e[ field ] > 0 or not field then
-			--if e.count and e.count > 0 then
 			count = count + 1
 		end
 	end
@@ -240,24 +259,14 @@ end
 ---@param player string
 ---@return number
 function M.count_recipes( recipes, player )
+	local _, player_id = M.find( player, M.db.players )
 	local count = 0
 
-	for _, recipe in pairs( recipes ) do
-		if M.find( player, recipe.players ) then
-			count = count + 1
-		end
-	end
-
-	return count
-end
-
----@param t table
----@return number
-function M.count_count( t )
-	local count = 0
-	for _, e in pairs( t ) do
-		if e.count and e.count > 0 then
-			count = count + 1
+	if player_id then
+		for _, recipe in pairs( recipes ) do
+			if M.find( tostring( player_id ), M.comma_separated_to_table( recipe.p ) ) then
+				count = count + 1
+			end
 		end
 	end
 
@@ -270,13 +279,13 @@ end
 ---@return nil
 function M.get_item_info( id, ufunc, data )
 	local function callback( item_id, cbfunc, _data )
-		local data = { GetItemInfo( item_id ) }
+		local info = { GetItemInfo( item_id ) }
 		cbfunc( {
 			id = item_id,
-			name = data[ 1 ],
-			link = data[ 2 ],
-			quality = data[ 3 ],
-			texture = data[ 9 ],
+			name = info[ 1 ],
+			link = info[ 2 ],
+			quality = info[ 3 ],
+			texture = info[ 9 ],
 		}, _data )
 	end
 
@@ -412,14 +421,28 @@ function M.scan_tooltip( link, callback, max_attempts, delay )
 	end
 end
 
----@param s string|string[]
----@return string[]
-function M.to_string_list( s )
-	---@type string[]
-	local r
+---@param tradeskill string
+---@return integer
+---@nodiscard
+function M.tradeskill_hash( tradeskill )
+	local keys = {}
+	local s = ""
+	local ts = M.db.tradeskills[ tradeskill ]
 
-	if type( s ) == "string" then r = { s } else r = s end
-	return r
+	if ts then
+		for k in ts do
+			table.insert( keys, k )
+		end
+
+		table.sort( keys )
+
+		for i = 1, getn( keys ) do
+			local _, c = string.gsub( ts[ keys[ i ] ].p, ",", "" )
+			s = s .. keys[ i ] .. "=" .. c .. ";"
+		end
+	end
+
+	return M.hash_string( s )
 end
 
 ---@param str string
@@ -473,7 +496,6 @@ end
 
 ---@diagnostic disable-next-line: undefined-field
 if not string.gmatch then string.gmatch = string.gfind end
-
 
 ---@diagnostic disable-next-line: duplicate-set-field
 string.match = function( str, pattern )

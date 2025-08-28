@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: GuildRecipes
 ## Author: Sica
-## Version: 0.1
+## Version: 0.2
 ## Notes: Share and view tradeskill recipes with your guild
 ## SavedVariablesPerCharacter: GuildRecipesDB
 

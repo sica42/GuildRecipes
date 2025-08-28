@@ -18,9 +18,8 @@ BINDING_HEADER_GUILDRECIPES = "GuildRecipes"
 ---@class Item
 ---@field id integer
 ---@field name string
----@field icon string
----@field link string?
----@field quality integer
+---@field quality integer?
+---@field icon string?
 
 ---@alias NotAceTimer any
 ---@alias TimerId number
@@ -81,7 +80,9 @@ function GuildRecipes.events.PLAYER_LOGIN()
 	-- Initialize DB
 	GuildRecipesDB = GuildRecipesDB or {}
 	m.db = GuildRecipesDB
+	m.db.players = m.db.players or {}
 	m.db.tradeskills = m.db.tradeskills or {}
+	m.db.tradeskills_last_update = m.db.tradeskills_last_update or {}
 	m.db.frame_tradeskills = m.db.frame_tradeskills or {}
 
 	m.player = UnitName( "player" )
@@ -97,16 +98,8 @@ end
 function GuildRecipes.events.TRADE_SKILL_SHOW()
 	local reverse = m.build_reverse_trade_map( GetLocale() )
 	local tradeskill = reverse[ GetTradeSkillLine() ]
-	local skills = {
-		Alchemy = true,
-		Blacksmithing = true,
-		Engineering = true,
-		Leatherworking = true,
-		Tailoring = true,
-		Jewelcrafting = true,
-	}
 
-	if skills[ tradeskill ] then
+	if m.TRADE_SKILL_LOCALIZATION[ tradeskill ] then
 		local num = GetNumTradeSkills()
 
 		for i = 1, GetNumTradeSkills() do
@@ -122,12 +115,17 @@ function GuildRecipes.events.TRADE_SKILL_SHOW()
 			for i = 1, GetNumTradeSkills() do
 				local _, type = GetTradeSkillInfo( i )
 				if type ~= "header" then
-					local item_link = GetTradeSkillItemLink( i )
-					m.update_tradeskill_item( tradeskill, item_link, { m.player } )
+					local id, name, quality = m.parse_item_link( GetTradeSkillItemLink( i ) )
+					local item = {
+						id = id,
+						name = name,
+						quality = quality
+					}
+					m.update_tradeskill_item( tradeskill, item, { m.player } )
 				end
 			end
 
-			m.db.tradeskills_last_update = m.get_server_timestamp()
+			m.db.tradeskills_last_update[ tradeskill ] = m.get_server_timestamp()
 			m.msg.send_tradeskill( tradeskill )
 		end
 	end
@@ -144,11 +142,16 @@ function GuildRecipes.events.CRAFT_SHOW()
 
 		if m.count_recipes( m.db.tradeskills[ tradeskill ], m.player ) ~= num then
 			for i = 1, GetNumCrafts() do
-				local item_link = GetCraftItemLink( i )
-				m.update_tradeskill_item( tradeskill, item_link, { m.player } )
+				local id, name, quality = m.parse_item_link( GetTradeSkillItemLink( i ) )
+				local item = {
+					id = id,
+					name = name,
+					quality = quality
+				}
+				m.update_tradeskill_item( tradeskill, item, { m.player } )
 			end
 
-			m.db.tradeskills_last_update = m.get_server_timestamp()
+			m.db.tradeskills_last_update[ tradeskill ] = m.get_server_timestamp()
 			m.msg.send_tradeskill( tradeskill )
 		end
 	end
@@ -161,40 +164,62 @@ function GuildRecipes.events.UNIT_INVENTORY_CHANGED()
 end
 
 ---@param tradeskill string
----@param item_link ItemLink
+---@param item Item
 ---@param players string[]
-function GuildRecipes.update_tradeskill_item( tradeskill, item_link, players )
-	local id, name = m.parse_item_link( item_link )
+function GuildRecipes.update_tradeskill_item( tradeskill, item, players )
+	if item.id then
+		local player_ids = {}
+		for _, p in pairs( players ) do
+			if not m.find( p, m.db.players ) then
+				table.insert( m.db.players, p )
+			end
 
-	if id then
-		if m.db.tradeskills[ tradeskill ][ id ] then
+			local _, player_id = m.find( p, m.db.players )
+			if player_id then
+				table.insert( player_ids, player_id )
+			end
+		end
+
+		if m.db.tradeskills[ tradeskill ][ item.id ] then
+			m.debug( string.format( "Updating %s: %s", tradeskill, item.name ) )
 			if not players then
-				m.debug( "ERROR, no players for: " .. tostring( item_link ) )
+				m.debug( "ERROR, no players for: " .. tostring( item.name ) )
 				return
 			end
+
+			local recipe_players = m.comma_separated_to_table( m.db.tradeskills[ tradeskill ][ item.id ].p )
 			for _, p in pairs( players ) do
-				if not m.find( p, m.db.tradeskills[ tradeskill ][ id ].players ) then
-					table.insert( m.db.tradeskills[ tradeskill ][ id ].players, p )
+				local _, player_id = m.find( p, m.db.players )
+
+				if player_id and not m.find( tostring(player_id), recipe_players ) then
+					table.insert( recipe_players, player_id )
 				end
 			end
+			m.db.tradeskills[ tradeskill ][ item.id ].p = m.table_to_comma_separated( recipe_players )
 		else
-			m.db.tradeskills[ tradeskill ][ id ] = {
-				id = id,
-				link = item_link,
-				name = name,
-				players = players
+			m.debug( string.format( "Adding %s: %s", tradeskill, item.name ) )
+
+			m.db.tradeskills[ tradeskill ][ item.id ] = {
+				n = item.name,
+				q = item.quality,
+				p = m.table_to_comma_separated( player_ids )
 			}
 		end
 	end
 end
 
 function GuildRecipes.update_data()
-	local now = m.get_server_timestamp()
-
-	-- Request tradeskills if older then 2 days
-	if not m.db.tradeskills_last_update or now >= m.db.tradeskills_last_update + 172800 then
-		m.db.tradeskills_last_update = now
+	-- If we haven't updated in the last 48 hours, request an update
+	if next(m.db.tradeskills_last_update) == nil then
 		m.msg.request_tradeskills()
+	else
+		local now = m.get_server_timestamp()
+		for tradeskill, last_update in pairs( m.db.tradeskills_last_update ) do
+			if now >= last_update + 172800 then
+				m.msg.request_tradeskill( tradeskill )
+				break
+			end
+		end
 	end
 end
 
@@ -217,6 +242,26 @@ function GuildRecipes.find_item_count_bag( bag_start, bag_end, name )
 		end
 	end
 	return count
+end
+
+function GuildRecipes.fix()
+	for tradeskill, recipes in pairs( m.db.tradeskills ) do
+		for id, recipe in pairs( recipes ) do
+			if recipe.p and type( recipe.p ) == "table" then
+				local players = ""
+				for _, p in pairs( recipe.p ) do
+					if players ~= "" then
+						players = players .. ","
+					end
+					players = players .. p
+				end
+				--	local _, pi = m.find( p, m.db.players)
+				--	table.insert( players, pi )
+
+				recipe.p = players
+			end
+		end
+	end
 end
 
 GuildRecipes:init()

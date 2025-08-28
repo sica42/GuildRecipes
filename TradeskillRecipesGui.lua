@@ -89,15 +89,13 @@ function M.new()
 
 		local function search( skill )
 			if m.db.tradeskills[ skill ] then
-				for _, item in m.db.tradeskills[ skill ] do
-					if item.name and string.find( string.upper( item.name ), string.upper( search_str ), nil, true ) then
-						local _, _, quality = m.parse_item_link( item.link )
+				for id, item in m.db.tradeskills[ skill ] do
+					if item.n and string.find( string.upper( item.n ), string.upper( search_str ), nil, true ) then
 						table.insert( search_result, {
-							id = item.id,
-							name = item.name,
-							link = item.link,
-							players = item.players,
-							quality = quality,
+							id = id,
+							name = item.n,
+							players = item.p,
+							quality = item.q,
 							skill = skill
 						} )
 					end
@@ -136,6 +134,7 @@ function M.new()
 		end
 
 		if item.skill == "Enchanting" then
+			item.link = m.make_enchant_link( item.id, item.name )
 			popup.info.set( item )
 			refresh()
 			return
@@ -147,7 +146,7 @@ function M.new()
 			local recipe = m.find( item.id, GetSpellInfoAtlasLootDB[ "craftspells" ], "craftItem" )
 
 			if recipe then
-				recipe.link = item.link
+				recipe.link = m.make_item_link( item.id, item.name, item.quality )
 				popup.info.set( recipe )
 			else
 				popup.info.clear( item.name .. " was not found in AtlasLoot database." )
@@ -202,7 +201,11 @@ function M.new()
 		text_item:SetScript( "OnClick", function()
 			if IsShiftKeyDown() and frame.item then
 				if ChatFrameEditBox:IsVisible() then
-					ChatFrameEditBox:Insert( frame.item.link )
+					if frame.item.skill == "Enchanting" then
+						ChatFrameEditBox:Insert( m.make_enchant_link( frame.item.id, frame.item.name ) )
+					else
+						ChatFrameEditBox:Insert( m.make_item_link( frame.item.id, frame.item.name, frame.item.quality ) )
+					end
 					return
 				end
 			end
@@ -314,7 +317,8 @@ function M.new()
 			local have_alts = GuildAlts.version and true or false
 			local players = ""
 
-			for _, player in item.players do
+			for player_id in string.gmatch(item.players, "([^,]+)") do
+				local player = m.db.players[ tonumber(player_id) ]
 				local color = m.guild_member_online( player ) and "FFFFFF" or "AAAAAA"
 				local main
 				if have_alts then

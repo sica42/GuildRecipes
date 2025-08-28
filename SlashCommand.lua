@@ -89,6 +89,7 @@ function M.new( name, slash_commands )
 			DEFAULT_CHAT_FRAME:AddMessage( string.format( "|c%s%s Help|r", m.tagcolor, m.name ) )
 			DEFAULT_CHAT_FRAME:AddMessage( "|c" .. m.tagcolor .. "/gr toggle|r|||c".. m.tagcolor .. "show|r|||c" .. m.tagcolor .. "hide|r Toggle/show/hide guild recipes" )
 			DEFAULT_CHAT_FRAME:AddMessage( "|c" .. m.tagcolor .. "/gr remove_player|r <|cffaaaaaaPlayer|r> Remove player" )
+			DEFAULT_CHAT_FRAME:AddMessage( "|c" .. m.tagcolor .. "/gr refresh|r Request updated tradeskills from other players" )
 		end )
 
 		register( { "toggle", "t" }, function()
@@ -109,7 +110,8 @@ function M.new( name, slash_commands )
 
 		register( { "clear", "c" }, function()
 			m.db.tradeskills = {}
-			m.db.tradeskills_last_update = nil
+			m.db.tradeskills_last_update = {}
+			m.info( "Cleared all tradeskill data.", true )
 		end )
 
 		register( {"remove_player", "rp"}, function( args)
