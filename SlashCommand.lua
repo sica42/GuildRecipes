@@ -90,6 +90,7 @@ function M.new( name, slash_commands )
 			DEFAULT_CHAT_FRAME:AddMessage( "|c" ..
 			m.tagcolor .. "/gr toggle|r|||c" .. m.tagcolor .. "show|r|||c" .. m.tagcolor .. "hide|r Toggle/show/hide guild recipes" )
 			DEFAULT_CHAT_FRAME:AddMessage( "|c" .. m.tagcolor .. "/gr remove_player|r <|cffaaaaaaPlayer|r> Remove player" )
+			DEFAULT_CHAT_FRAME:AddMessage( "|c" .. m.tagcolor .. "/gr clear|r Clears all tradeskills" )
 			DEFAULT_CHAT_FRAME:AddMessage( "|c" .. m.tagcolor .. "/gr refresh|r Request updated tradeskills from other players" )
 		end )
 
@@ -121,25 +122,33 @@ function M.new( name, slash_commands )
 				local player = args[ 1 ]
 				local _, player_id = m.find( player, m.db.players )
 				local found = false
-				for ts, tradeskill in pairs( m.db.tradeskills ) do
-					for id, recipe in pairs( tradeskill ) do
-						local players = m.comma_separated_to_table( recipe.p )
-						local _, idx = m.find( tostring( player_id ), players )
-						if idx then
-							found = true
-							table.remove( players, idx )
-							recipe.p = m.table_to_comma_separated( players )
-							if getn( players ) == 0 then
-								tradeskill[ id ] = nil
+
+				if player_id then
+					for ts, tradeskill in pairs( m.db.tradeskills ) do
+						for id, recipe in pairs( tradeskill ) do
+							local players = m.comma_separated_to_table( recipe.p )
+							local _, idx = m.find( tostring( player_id ), players )
+							if idx then
+								found = true
+								table.remove( players, idx )
+								recipe.p = m.table_to_comma_separated( players )
+								if getn( players ) == 0 then
+									-- No players left for this recipe, remove it
+									tradeskill[ id ] = nil
+								end
 							end
 						end
+						if found then
+							-- If we removed any recipes, send updated tradeskill
+							m.msg.send_tradeskill( ts )
+						end
+						if not next( tradeskill ) then
+							-- No recipes left for this tradeskill, remove it
+							m.db.tradeskills[ ts ] = nil
+						end
 					end
-					if found then
-						m.msg.send_tradeskill( ts )
-					end
-					if not next( tradeskill ) then
-						m.db.tradeskills[ ts ] = nil
-					end
+					-- Remove player from player list
+					m.db.players[ player_id ] = nil
 				end
 				if found then
 					m.info( string.format( "Removed all recipes for %q", player ), true )

@@ -314,7 +314,7 @@ function M.new()
 
 		frame.set = function( item )
 			---@diagnostic disable-next-line: undefined-global
-			local have_alts = GuildAlts.version and true or false
+			local have_alts = GuildAlts and GuildAlts.version and true or false
 			local players = ""
 
 			for player_id in string.gmatch(item.players, "([^,]+)") do
