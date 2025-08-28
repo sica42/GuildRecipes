@@ -112,6 +112,7 @@ function M.new( name, slash_commands )
 		register( { "clear", "c" }, function()
 			m.db.tradeskills = {}
 			m.db.tradeskills_last_update = {}
+			m.db.players = {}
 			m.info( "Cleared all tradeskill data.", true )
 		end )
 
