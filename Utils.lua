@@ -262,7 +262,7 @@ function M.count_recipes( recipes, player )
 	local _, player_id = M.find( player, M.db.players )
 	local count = 0
 
-	if player_id then
+	if player_id and recipes then
 		for _, recipe in pairs( recipes ) do
 			if M.find( tostring( player_id ), M.comma_separated_to_table( recipe.p ) ) then
 				count = count + 1

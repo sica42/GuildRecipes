@@ -141,8 +141,8 @@ function GuildRecipes.events.CRAFT_SHOW()
 		m.db.tradeskills[ tradeskill ] = m.db.tradeskills[ tradeskill ] or {}
 
 		if m.count_recipes( m.db.tradeskills[ tradeskill ], m.player ) ~= num then
-			for i = 1, GetNumCrafts() do
-				local id, name, quality = m.parse_item_link( GetTradeSkillItemLink( i ) )
+			for i = 1, num do
+				local id, name, quality = m.parse_item_link( GetCraftItemLink( i ) )
 				local item = {
 					id = id,
 					name = name,
